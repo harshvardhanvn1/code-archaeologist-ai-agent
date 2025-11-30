@@ -11,7 +11,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 NVD_API_KEY = os.getenv("NVD_API_KEY", "")
 
 # Gemini Model Configuration
-GEMINI_MODEL = "gemini-2.0-flash-exp"
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 TEMPERATURE = 0.7
 MAX_TOKENS = 8000
 
