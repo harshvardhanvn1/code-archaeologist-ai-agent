@@ -2,7 +2,7 @@
 import google.generativeai as genai
 from typing import Dict, Any, List
 from datetime import datetime
-import config
+from src import config
 
 
 class LLMJudge:

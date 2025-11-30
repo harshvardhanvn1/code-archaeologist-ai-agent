@@ -2,7 +2,7 @@
 from typing import Dict, Any, Optional
 import google.generativeai as genai
 from datetime import datetime
-import config
+from src import config
 
 
 class HumanReviewLoopAgent:
