@@ -145,7 +145,6 @@ def _analyze_python_file(file_path: Path) -> Dict[str, Any]:
         }
 
 
-# Test function
 if __name__ == "__main__":
     import json
     result = analyze_documentation(".")

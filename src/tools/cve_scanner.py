@@ -198,13 +198,15 @@ def _check_vulnerabilities(
     # In production, would make API calls like:
     # if nvd_api_key:
     #     headers = {"apiKey": nvd_api_key}
-    #     response = requests.get(f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={name}", headers=headers)
+    #     response = requests.get(
+    #         f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={name}",
+    #         headers=headers
+    #     )
     #     # Process response...
     
     return vulnerabilities
 
 
-# Test function
 if __name__ == "__main__":
     import json
     result = scan_dependencies_for_cves(".")
