@@ -1,5 +1,7 @@
 # Code Archaeologist AI Agent
 
+![Architecture Diagram](architecture-diagram.png)
+
 A production-ready multi-agent AI system for automated technical debt detection and analysis, built with Google Gemini and advanced agent orchestration patterns.
 
 **Competition:** Google Agents Intensive Capstone Project 2025  
