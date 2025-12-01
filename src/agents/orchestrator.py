@@ -9,7 +9,8 @@ from src.observability.tracer import trace_function, get_tracer
 from src.observability.metrics import get_global_metrics
 from src.evaluation.llm_judge import LLMJudge
 from src.evaluation.metrics import EvaluationMetrics
-from src.agents.human_review_loop import HumanReviewLoopAgent
+from src.sessions.session_service import get_session_service, Session
+from src.memory.memory_bank import get_memory_bank
 import time
 
 # Configure Gemini
@@ -20,9 +21,11 @@ class TechDebtOrchestrator:
     """
     Orchestrates the multi-agent technical debt analysis workflow.
     
-    This agent coordinates three parallel analysis agents and sequential agents:
+    This agent coordinates three parallel analysis agents:
     1. Parallel: Git History, CVE Scanner, Documentation Gap analyzers
-    2. Sequential: Impact Analyzer -> Report Writer -> Human Review Loop
+    2. Sequential: Impact Analyzer -> Report Writer
+    3. Evaluation: LLM-as-Judge
+    4. Storage: Session Management & Memory Bank
     """
     
     def __init__(self):
@@ -44,7 +47,10 @@ class TechDebtOrchestrator:
         
         # Initialize evaluation
         self.llm_judge = LLMJudge()
-        self.review_agent = HumanReviewLoopAgent()
+        
+        # Initialize session and memory services
+        self.session_service = get_session_service()
+        self.memory_bank = get_memory_bank()
         
         self.logger.info(
             "orchestrator_initialized",
@@ -56,8 +62,7 @@ class TechDebtOrchestrator:
     async def analyze_repository(
         self,
         repo_path: str,
-        analysis_type: str = "comprehensive",
-        enable_human_review: bool = False
+        analysis_type: str = "comprehensive"
     ) -> Dict[str, Any]:
         """
         Orchestrate a complete technical debt analysis.
@@ -65,17 +70,26 @@ class TechDebtOrchestrator:
         Args:
             repo_path: Path to the repository to analyze
             analysis_type: Type of analysis
-            enable_human_review: Whether to enable HITL validation
             
         Returns:
             Dictionary containing complete analysis results
         """
         analysis_start = time.time()
         
+        # Create session for this analysis
+        session = self.session_service.create_session(
+            metadata={
+                "repo_path": repo_path,
+                "analysis_type": analysis_type
+            }
+        )
+        session.add_message("system", f"Starting {analysis_type} analysis for {repo_path}")
+        
         self.logger.info(
             "analysis_started",
             repo_path=repo_path,
             analysis_type=analysis_type,
+            session_id=session.session_id,
             correlation_id=self.correlation_id
         )
         
@@ -83,19 +97,23 @@ class TechDebtOrchestrator:
             with self.tracer.start_as_current_span("full_analysis") as span:
                 span.set_attribute("repo_path", repo_path)
                 span.set_attribute("analysis_type", analysis_type)
+                span.set_attribute("session_id", session.session_id)
                 
                 # Phase 1: Parallel data collection
                 self.logger.info("phase_1_started", phase="parallel_data_collection")
+                session.update_state("current_phase", "parallel_data_collection")
                 parallel_results = await self._run_parallel_agents(repo_path)
                 self.logger.info("phase_1_completed", phase="parallel_data_collection")
                 
                 # Phase 2: Impact analysis
                 self.logger.info("phase_2_started", phase="impact_analysis")
+                session.update_state("current_phase", "impact_analysis")
                 impact_results = await self._analyze_impact(parallel_results)
                 self.logger.info("phase_2_completed", phase="impact_analysis")
                 
                 # Phase 3: Report generation
                 self.logger.info("phase_3_started", phase="report_generation")
+                session.update_state("current_phase", "report_generation")
                 final_report = await self._generate_report(parallel_results, impact_results)
                 self.logger.info("phase_3_completed", phase="report_generation")
                 
@@ -115,6 +133,7 @@ class TechDebtOrchestrator:
                 
                 # Phase 4: Evaluation (LLM-as-Judge)
                 self.logger.info("evaluation_started")
+                session.update_state("current_phase", "evaluation")
                 evaluation = self.llm_judge.evaluate_analysis(results)
                 results["evaluation"] = evaluation
                 self.logger.info(
@@ -122,29 +141,37 @@ class TechDebtOrchestrator:
                     overall_score=evaluation.get("overall_score", 0)
                 )
                 
-                # Phase 5: Human review (if enabled)
-                if enable_human_review:
-                    self.logger.info("human_review_started")
-                    review_request = self.review_agent.request_review(results)
-                    
-                    # Simulate review for demo
-                    simulated_feedback = self.review_agent.simulate_review(results)
-                    review_result = self.review_agent.process_feedback(
-                        review_request["review_id"],
-                        simulated_feedback
-                    )
-                    
-                    results["human_review"] = review_result
-                    self.logger.info("human_review_completed")
-                
                 # Record metrics
                 duration = time.time() - analysis_start
                 self.metrics.record_duration("full_analysis", duration)
                 self.metrics.increment("analyses_completed")
                 
+                # Store in memory bank
+                memory_id = self.memory_bank.store_analysis(
+                    repo_path=repo_path,
+                    analysis_results=results,
+                    tags=[analysis_type, impact_results["severity"]]
+                )
+                results["memory_id"] = memory_id
+                
+                # Update session with final results
+                self.session_service.update_session(
+                    session.session_id,
+                    analysis_results=results
+                )
+                session.add_message(
+                    "assistant",
+                    f"Analysis completed with severity: {impact_results['severity']}, "
+                    f"quality score: {evaluation.get('overall_score', 0)}/100"
+                )
+                session.update_state("current_phase", "completed")
+                results["session_id"] = session.session_id
+                
                 self.logger.info(
                     "analysis_completed",
                     duration_seconds=duration,
+                    session_id=session.session_id,
+                    memory_id=memory_id,
                     correlation_id=self.correlation_id
                 )
                 
@@ -154,14 +181,19 @@ class TechDebtOrchestrator:
             self.logger.error(
                 "analysis_failed",
                 error=str(e),
+                session_id=session.session_id,
                 correlation_id=self.correlation_id
             )
             self.metrics.increment("analyses_failed")
+            
+            session.add_message("system", f"Analysis failed: {str(e)}")
+            session.update_state("current_phase", "failed")
             
             return {
                 "status": "error",
                 "error": str(e),
                 "repo_path": repo_path,
+                "session_id": session.session_id,
                 "correlation_id": self.correlation_id,
                 "timestamp": datetime.now().isoformat()
             }
@@ -330,7 +362,7 @@ Format as a brief analysis."""
 if __name__ == "__main__":
     async def test():
         orchestrator = TechDebtOrchestrator()
-        result = await orchestrator.analyze_repository(".", "comprehensive", enable_human_review=True)
+        result = await orchestrator.analyze_repository(".", "comprehensive")
         
         import json
         print(json.dumps(result, indent=2, default=str))

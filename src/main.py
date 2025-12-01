@@ -54,13 +54,6 @@ def print_summary(results: dict):
             print(f"  Actionability: {dims.get('actionability', 0)}/100")
             print(f"  Clarity: {dims.get('clarity', 0)}/100")
     
-    # Show human review if available
-    if human_review.get("status") == "completed":
-        print(f"\nHUMAN REVIEW (HITL Validation)")
-        print("-" * 70)
-        feedback = human_review.get("feedback_processed", {})
-        print(f"Reviewer Approved: {feedback.get('approved', 'N/A')}")
-        print(f"Overall Rating: {feedback.get('overall_rating', 'N/A')}/5")
     
     print("\nKEY RISKS:")
     for i, risk in enumerate(impact['key_risks'], 1):
@@ -145,11 +138,6 @@ Examples:
         help="Path to save JSON report (optional)"
     )
     
-    parser.add_argument(
-        "--human-review",
-        action="store_true",
-        help="Enable human-in-the-loop review validation"
-    )
     
     parser.add_argument(
         "--verbose",
@@ -175,8 +163,6 @@ Examples:
         print_banner()
         print(f"Analyzing repository: {args.repo_path}")
         print(f"Analysis type: {args.analysis_type}")
-        if args.human_review:
-            print("Human-in-the-Loop review: ENABLED")
         print()
     
     # Run analysis
@@ -184,8 +170,7 @@ Examples:
         orchestrator = TechDebtOrchestrator()
         results = await orchestrator.analyze_repository(
             repo_path=args.repo_path,
-            analysis_type=args.analysis_type,
-            enable_human_review=args.human_review
+            analysis_type=args.analysis_type
         )
         
         # Save to file if requested
@@ -204,7 +189,6 @@ Examples:
             print_summary(results)
             if not args.output:
                 print("Tip: Use --output report.json to save full results")
-                print("Tip: Use --human-review to enable HITL validation\n")
         
         # Exit code based on severity
         severity_exit_codes = {
