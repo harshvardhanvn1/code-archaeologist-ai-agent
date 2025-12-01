@@ -30,3 +30,6 @@ reports/*.html
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Ignore report files in root
+*_report.json
