@@ -5,8 +5,8 @@ import json
 import sys
 from pathlib import Path
 from datetime import datetime
-from .agents.orchestrator import TechDebtOrchestrator
-from . import config
+from src.agents.orchestrator import TechDebtOrchestrator
+from src import config
 
 
 def print_banner():
@@ -14,6 +14,7 @@ def print_banner():
     print("\n" + "="*70)
     print("  CODE ARCHAEOLOGIST AI AGENT")
     print("  Technical Debt Detection & Analysis System")
+    print("  Multi-Agent AI with Observability & Evaluation")
     print("="*70 + "\n")
 
 
@@ -26,15 +27,40 @@ def print_summary(results: dict):
     analysis = results["results"]
     impact = analysis["impact_analysis"]
     report = analysis["final_report"]
+    evaluation = results.get("evaluation", {})
+    human_review = results.get("human_review", {})
     
     print("\nEXECUTIVE SUMMARY")
     print("-" * 70)
     print(f"Repository: {results['repo_path']}")
     print(f"Analysis Type: {results['analysis_type']}")
+    print(f"Correlation ID: {results['correlation_id']}")
     print(f"Timestamp: {results['timestamp']}")
+    
     print(f"\nImpact Score: {impact['impact_score']}/100")
     print(f"Severity: {impact['severity'].upper()}")
     print(f"Total Issues: {report['executive_summary']['total_issues']}")
+    
+    # Show evaluation scores if available
+    if evaluation.get("overall_score"):
+        print(f"\nQUALITY EVALUATION (LLM-as-Judge)")
+        print("-" * 70)
+        print(f"Overall Quality Score: {evaluation['overall_score']}/100")
+        
+        if evaluation.get("dimension_scores"):
+            dims = evaluation["dimension_scores"]
+            print(f"  Completeness: {dims.get('completeness', 0)}/100")
+            print(f"  Accuracy: {dims.get('accuracy', 0)}/100")
+            print(f"  Actionability: {dims.get('actionability', 0)}/100")
+            print(f"  Clarity: {dims.get('clarity', 0)}/100")
+    
+    # Show human review if available
+    if human_review.get("status") == "completed":
+        print(f"\nHUMAN REVIEW (HITL Validation)")
+        print("-" * 70)
+        feedback = human_review.get("feedback_processed", {})
+        print(f"Reviewer Approved: {feedback.get('approved', 'N/A')}")
+        print(f"Overall Rating: {feedback.get('overall_rating', 'N/A')}/5")
     
     print("\nKEY RISKS:")
     for i, risk in enumerate(impact['key_risks'], 1):
@@ -87,8 +113,8 @@ Examples:
   Analyze current directory:
     python -m src.main
   
-  Analyze specific repository:
-    python -m src.main --repo-path /path/to/repo
+  Analyze with human review:
+    python -m src.main --human-review
   
   Save output to file:
     python -m src.main --output report.json
@@ -120,6 +146,12 @@ Examples:
     )
     
     parser.add_argument(
+        "--human-review",
+        action="store_true",
+        help="Enable human-in-the-loop review validation"
+    )
+    
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Show detailed logging"
@@ -142,14 +174,18 @@ Examples:
     if not args.json_only:
         print_banner()
         print(f"Analyzing repository: {args.repo_path}")
-        print(f"Analysis type: {args.analysis_type}\n")
+        print(f"Analysis type: {args.analysis_type}")
+        if args.human_review:
+            print("Human-in-the-Loop review: ENABLED")
+        print()
     
     # Run analysis
     try:
         orchestrator = TechDebtOrchestrator()
         results = await orchestrator.analyze_repository(
             repo_path=args.repo_path,
-            analysis_type=args.analysis_type
+            analysis_type=args.analysis_type,
+            enable_human_review=args.human_review
         )
         
         # Save to file if requested
@@ -167,7 +203,8 @@ Examples:
         else:
             print_summary(results)
             if not args.output:
-                print("Tip: Use --output report.json to save full results\n")
+                print("Tip: Use --output report.json to save full results")
+                print("Tip: Use --human-review to enable HITL validation\n")
         
         # Exit code based on severity
         severity_exit_codes = {
